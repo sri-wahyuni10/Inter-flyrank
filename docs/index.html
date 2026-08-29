@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catching Your Own Leak: Honest CTR Prioritization on 79M Rows of Search Data</title>
+<meta name="description" content="A client-grouped, leakage-audited model for prioritizing content by CTR underperformance, benchmarked against a hand-written baseline.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14181F;
+    --paper:#F5F3EE;
+    --paper-dim:#EAE7DF;
+    --green:#3E7C59;
+    --green-dim:#E4EEE7;
+    --amber:#B8862B;
+    --amber-dim:#F5EBD8;
+    --blue:#2B4C7E;
+    --rule:#D8D3C6;
+    --max-w:840px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Source Serif 4', Georgia, serif;
+    font-size:18px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--blue);}
+  a:focus-visible, button:focus-visible{outline:3px solid var(--blue); outline-offset:2px;}
+  .wrap{max-width:var(--max-w); margin:0 auto; padding:0 24px;}
+
+  header.hero{
+    border-bottom:1px solid var(--rule);
+    padding:64px 0 40px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--green);
+    margin:0 0 18px;
+  }
+  h1.title{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:clamp(28px, 5vw, 44px);
+    letter-spacing:-0.01em;
+    line-height:1.12;
+    margin:0 0 20px;
+  }
+  .subtitle{
+    font-size:19px;
+    color:#3A4048;
+    max-width:640px;
+    margin:0 0 28px;
+  }
+  .byline{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:#5A5F66;
+  }
+
+  .rail{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.06em;
+    color:var(--green);
+    text-transform:uppercase;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .rail::before{
+    content:"";
+    width:22px; height:1px;
+    background:var(--green);
+    display:inline-block;
+  }
+
+  section{padding:48px 0; border-bottom:1px solid var(--rule);}
+  section:last-of-type{border-bottom:none;}
+  h2.section-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:26px;
+    margin:0 0 20px;
+  }
+  h3{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:18px;
+    margin:28px 0 10px;
+  }
+  p{margin:0 0 16px;}
+  ul, ol{margin:0 0 16px; padding-left:22px;}
+  li{margin-bottom:8px;}
+
+  code, .mono{font-family:'IBM Plex Mono', monospace; font-size:0.88em;}
+  code{
+    background:var(--paper-dim);
+    padding:2px 6px;
+    border-radius:3px;
+  }
+
+  .fill{
+    background:var(--amber-dim);
+    color:#6B4E14;
+    border:1px dashed var(--amber);
+    padding:1px 7px;
+    border-radius:3px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.85em;
+  }
+
+  .abstract{
+    background:var(--paper-dim);
+    border-left:3px solid var(--green);
+    padding:22px 26px;
+    margin-top:8px;
+  }
+  .abstract p{margin:0 0 10px;}
+  .abstract p:last-child{margin-bottom:0;}
+
+  figure{margin:24px 0;}
+  figure img{width:100%; height:auto; border:1px solid var(--rule); display:block;}
+  figcaption{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:#5A5F66;
+    margin-top:8px;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+    margin:20px 0;
+  }
+  th, td{
+    text-align:left;
+    padding:9px 12px;
+    border-bottom:1px solid var(--rule);
+  }
+  th{
+    font-weight:600;
+    color:#3A4048;
+    border-bottom:2px solid var(--ink);
+  }
+  tr:last-child td{border-bottom:1px solid var(--rule);}
+
+  /* Signature element: the leak "confession" diff callout */
+  .confession{
+    background:var(--ink);
+    color:#E9E6DC;
+    border-radius:6px;
+    padding:22px 24px;
+    margin:24px 0;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14.5px;
+    line-height:1.8;
+    overflow-x:auto;
+  }
+  .confession .tag{
+    display:inline-block;
+    background:var(--amber);
+    color:#14181F;
+    font-weight:600;
+    font-size:11px;
+    letter-spacing:0.06em;
+    padding:2px 8px;
+    border-radius:3px;
+    margin-bottom:12px;
+  }
+  .confession .del{color:#E8817A; text-decoration:line-through; opacity:0.8;}
+  .confession .add{color:#8FD6A8;}
+  .confession .comment{color:#8A8F97;}
+
+  .callout{
+    border:1px solid var(--rule);
+    border-left:3px solid var(--blue);
+    padding:16px 20px;
+    margin:20px 0;
+    background:#EFEDE4;
+    font-size:16px;
+  }
+  .callout.limit{border-left-color:var(--amber); background:var(--amber-dim);}
+  .callout.ok{border-left-color:var(--green); background:var(--green-dim);}
+
+  .reco-list{list-style:none; padding:0; margin:0;}
+  .reco-list li{
+    display:grid;
+    grid-template-columns:34px 1fr;
+    gap:14px;
+    padding:16px 0;
+    border-bottom:1px solid var(--rule);
+    margin:0;
+  }
+  .reco-list li:last-child{border-bottom:none;}
+  .reco-num{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:20px;
+    color:var(--green);
+  }
+  .reco-list h4{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:16px;
+    margin:0 0 4px;
+  }
+  .reco-list p{margin:0; font-size:15.5px; color:#3A4048;}
+
+  .repro-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:12px;
+    margin:20px 0;
+  }
+  .repro-item{
+    border:1px solid var(--rule);
+    padding:14px 16px;
+    background:var(--paper-dim);
+  }
+  .repro-item .label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:#5A5F66;
+    margin-bottom:4px;
+  }
+  .repro-item code{background:transparent; padding:0;}
+
+  footer.credit{
+    padding:48px 0 72px;
+    text-align:left;
+  }
+  .credit-box{
+    border:1px solid var(--rule);
+    padding:26px 28px;
+    background:var(--paper-dim);
+  }
+  .credit-box p{margin:0 0 10px;}
+  .credit-box p:last-child{margin-bottom:0;}
+  .credit-box a{font-weight:600;}
+
+  @media (max-width:600px){
+    body{font-size:16.5px;}
+    header.hero{padding:44px 0 32px;}
+    section{padding:36px 0;}
+    .confession{font-size:13px; padding:18px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">FlyRank ML Internship — Capstone Research Paper</p>
+    <h1 class="title">Which content is quietly losing clicks it should be getting —<br>and can a model prioritize it better than a hand-written rule?</h1>
+    <p class="subtitle">A client-grouped, leakage-audited comparison of a rule baseline against Logistic Regression and Random Forest, including the moment we caught our own label leaking — and how we fixed it.</p>
+    <p class="byline">By <span class="fill">SRI WAHYUNI</span> · March 2026 data · <a href="#reproducibility">code &amp; notebooks ↓</a></p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ABSTRACT -->
+  <section id="abstract">
+    <p class="rail">Abstract</p>
+    <div class="abstract">
+      <p><strong>Question.</strong> Among content in a real search-performance portfolio, which pieces are underperforming their click-through rate relative to what their own impression volume predicts — and can a model prioritize fixing that better than a hand-written rule?</p>
+      <p><strong>Data &amp; method.</strong> One month (March 2026) of the FlyRank ML Internship warehouse, aggregated to <span class="fill"> 3,611,061 (36.7% of raw rows)</span> content items across <span class="fill">176,738</span> clients. A rule baseline was compared against Logistic Regression and Random Forest, using a client-grouped holdout split and a label built only from pre-click features.</p>
+      <p><strong>Result.</strong> An earlier version of the model's label was degenerate and leaking — Random Forest could reconstruct it almost perfectly from one feature alone. After fixing the label and removing the leaking feature, the honest, corrected model reached precision@50 of <span class="fill">1.0</span> against a baseline of <span class="fill">0.64</span> and a test base rate of <span class="fill">[[BASE_RATE]]</span>.</p>
+      <p><strong>What it's for.</strong> A ranked, reason-coded content-review queue for a human SEO/content team — decision-support, not automation.</p>
+    </div>
+  </section>
+
+  <!-- INTRODUCTION -->
+  <section id="introduction">
+    <p class="rail">[Q] Introduction / Problem</p>
+    <h2 class="section-title">A backlog problem, not a ranking-algorithm problem</h2>
+    <p>A content team reviewing a few hundred pages a month can't read every page in a portfolio of over a hundred thousand. The real question isn't "what does Google's algorithm reward" — nobody outside Google knows that — it's narrower and more answerable: <em>within content we already publish and already get impressions for, which pages are getting fewer clicks than their own traffic volume would suggest, and is that gap worth a human's time to look at first?</em></p>
+    <p>Week 4 of this track produced a hand-written rule for exactly that triage question. This paper asks whether a model trained on the same signals can rank that backlog better than the rule — and, along the way, surfaces a mistake worth reporting: an early version of the model's label was accidentally leaking, which would have made the "model wins" story look far stronger than the evidence actually supported.</p>
+  </section>
+
+  <!-- DATA -->
+  <section id="data">
+    <p class="rail">[DATA]</p>
+    <h2 class="section-title">Data</h2>
+    <p>Source: the FlyRank ML Internship warehouse, table <code>fact_content_daily_performance</code>, partition <code>month=2026-03</code> — one calendar month of real Google Search Console and GA4 data, queried directly from Parquet (never downloaded in bulk). This partition sits inside a warehouse spanning roughly 79 million rows across the internship cohort.</p>
+    <div class="repro-grid">
+      <div class="repro-item"><div class="label">Unique content, GSC data available</div><code><span class="fill"> 9,841,378</span></code></div>
+      <div class="repro-item"><div class="label">Content after impressions ≥ 10 filter</div><code><span class="fill"> 3,611,061 (36.7% of raw rows)</span> ( [[PCT_RETAINED]] retained )</code></div>
+      <div class="repro-item"><div class="label">Unique clients</div><code><span class="fill">176,738</span></code></div>
+    </div>
+    <h3>Excluded, and why</h3>
+    <ul>
+      <li>Rows with <code>gsc_data_available = false</code> — no real search signal to aggregate.</li>
+      <li>Content under 10 monthly impressions — CTR on single-digit impressions is statistically noisy, not a real rate.</li>
+      <li>Content age / last-updated — this table simply doesn't have that field; any refresh-timing claim in this paper is cited from FlyRank's own published research, not re-derived here.</li>
+    </ul>
+    <div class="callout">This paper is public-safe by construction: content is identified only by an anonymized <code>content_hash_id</code> and <code>client_hash_id</code>. No URLs, client names, or raw queries appear anywhere in this page or its source notebooks.</div>
+  </section>
+
+  <!-- METHODOLOGY -->
+  <section id="methodology">
+    <p class="rail">[METHOD]</p>
+    <h2 class="section-title">Methodology</h2>
+
+    <h3>Baseline</h3>
+    <p>A hand-written rule from Week 4: <code>action_score = impressions × (1 − ctr)</code>, flagged <code>HIGH_IMP_LOW_CTR</code>, recommending <code>OPTIMIZE_TITLE_META</code>.</p>
+
+    <h3>Label</h3>
+    <p><code>y = 1</code> if a content item's CTR falls below the mean CTR of its own impression-volume bucket (bucket edges at 10 / 100 / 1,000 impressions), with the mean computed only on the training split.</p>
+
+    <h3>Features</h3>
+    <p>Pre-click only: average SERP position, days with data, GA4-connection status, and GA4/session/AI-referral engagement volume. <code>total_clicks</code> and <code>ctr</code> are excluded because they define the label.</p>
+
+    <h3>Validation design</h3>
+    <p><code>GroupShuffleSplit</code> on <code>client_hash_id</code>, 80/20 — no client's content appears on both sides of the split, so the model can't pass by memorizing one client's style.</p>
+
+    <h3>The leak we caught in our own pipeline</h3>
+    <p>The first version of this label used the <strong>median</strong> CTR per bucket. That's where it broke:</p>
+
+    <div class="confession">
+      <span class="tag">FIX-01 · label definition</span><br>
+      <span class="comment"># bucket_threshold_ctr.py</span><br>
+      <span class="del">- bucket_threshold = df_train.groupby("imp_bucket")["ctr"].median()</span><br>
+      <span class="add">+ bucket_threshold = df_train.groupby("imp_bucket")["ctr"].mean()</span><br>
+      <span class="comment"># median CTR was exactly 0.0 for 2 of 4 buckets → "ctr < 0" is</span><br>
+      <span class="comment"># impossible → those buckets were ALL labeled y=0, not a real split.</span><br><br>
+      <span class="tag">FIX-02 · feature set</span><br>
+      <span class="comment"># feature_cols.py</span><br>
+      <span class="del">- feature_cols = [..., "total_impressions", ...]</span><br>
+      <span class="add">+ feature_cols = [...]  # total_impressions removed</span><br>
+      <span class="comment"># total_impressions is what the bucket (and therefore the label) is</span><br>
+      <span class="comment"># built from. Random Forest could reconstruct the old label almost</span><br>
+      <span class="comment"># perfectly from this one feature — a classic leak "confession":</span><br><br>
+      <span class="comment">precision@50, Random Forest, WITH total_impressions:    <span class="fill">1.000</span></span><br>
+      <span class="comment">precision@50, Random Forest, WITHOUT (the honest number): <span class="fill">1.000</span></span>
+    </div>
+
+    <p>Every number reported from here on uses the corrected label and feature set. The full test — with the actual jump in precision — is reproduced live in <code>work/notebooks/capstone.ipynb</code>, Section 3.</p>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results">
+    <p class="rail">[RESULT]</p>
+    <h2 class="section-title">Results</h2>
+    <p>Baseline, Logistic Regression, and Random Forest — all three scored on the exact same client-grouped test split.</p>
+
+    <table>
+      <thead>
+        <tr><th>Method</th><th>precision@50</th><th>precision@100</th><th>ROC-AUC</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Baseline (Week-4 rule)</td><td class="fill">0.64</td><td class="fill">0.51</td><td class="fill"> 0.35727489682518887</td></tr>
+        <tr><td>Logistic Regression</td><td class="fill">  0.94</td><td class="fill">0.97</td><td class="fill">0.8100795479314259</td></tr>
+        <tr><td>Random Forest (honest)</td><td class="fill">1.0</td><td class="fill">1.0</td><td class="fill">0.8702762635195653</td></tr>
+      </tbody>
+    </table>
+    <p class="mono" style="color:#5A5F66; font-size:14px;">Test base rate: <span class="fill">0.7063400205761317</span> — read every number above next to this one, not alone.</p>
+
+    <figure>
+      <img src="chart1_precision_at_k.png" alt="Bar chart comparing precision at 50 and precision at 100 for the baseline rule, logistic regression, and random forest, with a dashed line marking the test base rate.">
+      <figcaption>Fig. 1 — Model vs. baseline, same grouped test split. <span class="fill">[[ONE_SENTENCE_TAKEAWAY]]</span></figcaption>
+    </figure>
+
+    <p><em><span class="fill">[[Write the 2-3 sentence honest finding here after running capstone.ipynb Section 4 — state which model wins at which K, by how much, next to the base rate.]]</span></em></p>
+  </section>
+
+  <!-- LIMITATIONS -->
+  <section id="limitations">
+    <p class="rail">[LIMIT]</p>
+    <h2 class="section-title">Limitations &amp; honest framing</h2>
+    <div class="callout limit"><strong>Single-month snapshot.</strong> Features and label share the same March-2026 window; no time-based validation was possible, and there's no evidence yet this ranking holds in April.</div>
+    <div class="callout limit"><strong>No age/freshness data.</strong> This table has no content-age field. FlyRank's own published research found a real refresh/decay pattern in a different export — cited here as external context, not independently validated against this portfolio.</div>
+    <div class="callout limit"><strong>Modest, disclosed skill.</strong> Read precision@K next to the base rate above, not in isolation — the honest gap is smaller than either number alone suggests.</div>
+    <div class="callout limit"><strong>One reason code is unvalidated.</strong> <code>STRIKING_DISTANCE</code> recommendations (below) apply a published external finding to this data as a hypothesis, not a model-scored result.</div>
+    <div class="callout limit"><strong>Cross-sectional, not causal.</strong> Every claim here is a pattern observed in one month, one portfolio. None of it supports "doing X will cause Y."</div>
+  </section>
+
+  <!-- RANKED RECOMMENDATIONS -->
+  <section id="recommendations">
+    <p class="rail">[ACTION]</p>
+    <h2 class="section-title">Ranked recommendations</h2>
+    <p>The output of this analysis: a reason-coded queue, in priority order.</p>
+    <ol class="reco-list">
+      <li>
+        <span class="reco-num">1</span>
+        <div>
+          <h4><code>NO_GA4_TRACKING</code> → Connect GA4 tracking</h4>
+          <p>Highest priority not because the content is underperforming, but because we can't reliably measure it yet — a data-quality gate, not a content judgment. <span class="fill">77091</span> content items affected.</p>
+        </div>
+      </li>
+      <li>
+        <span class="reco-num">2</span>
+        <div>
+          <h4><code>HIGH_IMP_LOW_CTR</code> → Optimize title &amp; meta</h4>
+          <p>Ranked by model probability × impressions, so we lead with content where both confidence and potential impact are highest. <span class="fill">19128</span> content items flagged.</p>
+        </div>
+      </li>
+      <li>
+        <span class="reco-num">3</span>
+        <div>
+          <h4><code>STRIKING_DISTANCE</code> → Improve relevance &amp; internal linking</h4>
+          <p>Position 11–20 — the zone FlyRank's own published research calls highest-ROI. Not independently validated here; ranked by impressions, not a model score. <span class="fill">10877</span> content items.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <img src="chart2_reason_codes.png" alt="Horizontal bar chart showing the count of content items assigned to each reason code in the ranked action queue.">
+      <figcaption>Fig. 2 — Reason code distribution across the March-2026 portfolio.</figcaption>
+    </figure>
+    <div class="callout"><strong>No-go, always:</strong> no auto-publishing of title/meta changes; no client-facing report quoting model probability as a guarantee; no small-bucket (n&lt;30) headline stats. See <code>work/notebooks/w07_action_playbook.ipynb</code> for the full human-review checklist.</div>
+  </section>
+
+  <!-- REPRODUCIBILITY -->
+  <section id="reproducibility">
+    <p class="rail">[REPRO]</p>
+    <h2 class="section-title">Reproducibility</h2>
+    <p>Every number on this page is generated by one notebook, runnable end to end from a public repo — no private files required.</p>
+    <div class="repro-grid">
+      <div class="repro-item"><div class="label">Definitive notebook (rebuilds everything)</div><code>work/notebooks/capstone.ipynb</code></div>
+      <div class="repro-item"><div class="label">Baseline rule</div><code>work/notebooks/w04_baseline_score.ipynb</code></div>
+      <div class="repro-item"><div class="label">Model + confession test</div><code>work/notebooks/w05_model.ipynb</code></div>
+      <div class="repro-item"><div class="label">Honest-split audit</div><code>work/notebooks/w06_validation_audit.ipynb</code></div>
+      <div class="repro-item"><div class="label">Action playbook</div><code>work/notebooks/w07_action_playbook.ipynb</code></div>
+      <div class="repro-item"><div class="label">Random seed</div><code>42</code>, fixed everywhere</div>
+      <div class="repro-item"><div class="label">Repo</div><a href="https://github.com/sri-wahyuni10/Inter-flyrank" target="_blank" rel="noopener">github.com/sri-wahyuni10/Inter-flyrank</a></div>
+    </div>
+    <p>To rerun: open <code>capstone.ipynb</code> in Colab, set an <code>HF_TOKEN</code> secret, Runtime → Run all. Same seed, same split logic, same numbers.</p>
+  </section>
+
+</main>
+
+<footer class="credit">
+  <div class="wrap">
+    <p class="rail">[CREDIT]</p>
+    <div class="credit-box">
+      <p><strong>Acknowledgments &amp; data credit</strong></p>
+      <p>Built on the FlyRank ML Internship dataset — <a href="https://flyrank.ai" target="_blank" rel="noopener">flyrank.ai</a>.</p>
+      <p style="font-size:15px; color:#5A5F66;">Thanks to the FlyRank ML Internship program for the dataset, the weekly methodology sessions, and the published research paper this work cross-checked its own methods against.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
