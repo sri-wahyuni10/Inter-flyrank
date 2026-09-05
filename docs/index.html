@@ -281,15 +281,15 @@
       <p><strong>Question.</strong> Among content in a real search-performance portfolio, which pieces are underperforming their click-through rate relative to what their own impression volume predicts — and can a model prioritize fixing that better than a hand-written rule?</p>
       <p><strong>Data &amp; method.</strong> One month (March 2026) of the FlyRank ML Internship warehouse, aggregated to <span class="fill"> 3,611,061 (36.7% of raw rows)</span> content items across <span class="fill">176,738</span> clients. A rule baseline was compared against Logistic Regression and Random Forest, using a client-grouped holdout split and a label built only from pre-click features.</p>
       <p><strong>Result.</strong> An earlier version of the model's label was degenerate and leaking — Random Forest could reconstruct it almost perfectly from one feature alone. After fixing the label and removing the leaking feature, the honest, corrected model reached precision@50 of <span class="fill">1.0</span> against a baseline of <span class="fill">0.64</span> and a test base rate of <span class="fill">0.71</span>.</p>
-      <p><strong>What it's for.</strong> A ranked, reason-coded content-review queue for a human SEO/content team — decision-support, not automation.</p>
+      <p><strong>What it's for.</strong> A ranked, reason-coded content-review queue for a human SEO/content team managing a real multi-client content portfolio — decision-support, not automation.</p>
     </div>
   </section>
-
   <!-- INTRODUCTION -->
   <section id="introduction">
     <p class="rail">[Q] Introduction / Problem</p>
     <h2 class="section-title">A backlog problem, not a ranking-algorithm problem</h2>
     <p>A content team reviewing a few hundred pages a month can't read every page in a portfolio of over a hundred thousand. The real question isn't "what does Google's algorithm reward" — nobody outside Google knows that — it's narrower and more answerable: <em>within content we already publish and already get impressions for, which pages are getting fewer clicks than their own traffic volume would suggest, and is that gap worth a human's time to look at first?</em></p>
+    <p>This is the same triage problem FlyRank's own content teams face at scale: <span class="fill">176,738</span> anonymized clients' worth of published content, far more than any human reviewer can read page-by-page every month. The dataset this paper works from is a direct, pseudonymized slice of that operational reality — the backlog isn't hypothetical.</p>
     <p>Week 4 of this track produced a hand-written rule for exactly that triage question. This paper asks whether a model trained on the same signals can rank that backlog better than the rule — and, along the way, surfaces a mistake worth reporting: an early version of the model's label was accidentally leaking, which would have made the "model wins" story look far stronger than the evidence actually supported.</p>
   </section>
 
